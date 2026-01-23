@@ -131,17 +131,17 @@ def normalise_contacts(df: pd.DataFrame) -> pd.DataFrame:
         if c not in df.columns:
             df[c] = ""
 
-    # Fill NaNs
+    # Fill NaNs + strip
     for c in required:
-        df[c] = df[c].fillna("")
+        df[c] = df[c].fillna("").astype(str).str.strip()
 
     # If display missing, build it
     if (df["display"] == "").any():
-        df["display"] = (df["title"] + " " + df["first_name"] + " " + df["last_name"]).str.replace("  ", " ").str.strip()
-
-    # Strip whitespace
-    for c in ["chamber", "title", "first_name", "last_name", "state", "party", "email", "display"]:
-        df[c] = df[c].astype(str).str.strip()
+        df["display"] = (
+            (df["title"] + " " + df["first_name"] + " " + df["last_name"])
+            .str.replace("  ", " ")
+            .str.strip()
+        )
 
     return df
 
@@ -156,7 +156,52 @@ def load_contacts() -> pd.DataFrame:
     return normalise_contacts(df)
 
 
-def build_email(tone: str, sender_name: str, recipient_title: str, recipient_lastname: str, seed: int) -> tuple[str, str]:
+def infer_recipient_title(row: dict) -> str:
+    """
+    Use title from CSV if present; otherwise infer by chamber (robust).
+    """
+    title = str(row.get("title", "")).strip()
+    if title:
+        low = title.lower()
+        if "senator" in low:
+            return "Senator"
+        if low in ["mr", "ms", "mrs", "dr"]:
+            return title
+        return title
+
+    chamber = str(row.get("chamber", "")).strip().lower()
+    if "senate" in chamber:
+        return "Senator"
+    if "house" in chamber:
+        return "Mr/Ms"
+
+    return ""
+
+
+def get_last_name(row: dict) -> str:
+    """
+    Prefer last_name; fall back to last token in display.
+    """
+    last_name = str(row.get("last_name", "")).strip()
+    if last_name:
+        return last_name
+
+    display = str(row.get("display", "")).strip()
+    if display:
+        parts = display.split()
+        if parts:
+            return parts[-1]
+
+    return ""
+
+
+def build_email(
+    tone: str,
+    sender_name: str,
+    recipient_title: str,
+    recipient_lastname: str,
+    seed: int,
+) -> tuple[str, str]:
     rnd = random.Random(seed)
 
     subject = rnd.choice(SUBJECT_OPTIONS)
@@ -182,22 +227,6 @@ def build_email(tone: str, sender_name: str, recipient_title: str, recipient_las
     return subject, body
 
 
-def infer_recipient_title(row: dict) -> str:
-    """
-    Use title from CSV if present; otherwise infer by chamber.
-    """
-    title = str(row.get("title", "")).strip()
-    if title:
-        return title
-
-    chamber = str(row.get("chamber", "")).strip().lower()
-    if chamber == "senate":
-        return "Senator"
-    if chamber == "house":
-        return "Mr/Ms"
-    return ""
-
-
 def generate_one_of_ten(tone: str, sender_name: str, row: dict) -> tuple[str, str]:
     """
     Generate 10 variations (same 6 items), then randomly pick one.
@@ -209,7 +238,7 @@ def generate_one_of_ten(tone: str, sender_name: str, row: dict) -> tuple[str, st
             tone=tone,
             sender_name=sender_name,
             recipient_title=infer_recipient_title(row),
-            recipient_lastname=str(row.get("last_name", "")).strip(),
+            recipient_lastname=get_last_name(row),
             seed=base_seed + i,
         )
         candidates.append((subject, body))
@@ -231,6 +260,7 @@ if "sender_name" not in st.session_state:
 if "draft" not in st.session_state:
     st.session_state.draft = None
 
+
 # ---------------------------
 # Step 1: sender name
 # ---------------------------
@@ -247,6 +277,7 @@ if st.session_state.step == 1:
                 st.session_state.sender_name = sender.strip()
                 st.session_state.step = 2
                 st.rerun()
+
 
 # ---------------------------
 # Step 2: filter + pick recipient from table (NO dropdown)
@@ -286,7 +317,6 @@ elif st.session_state.step == 2:
     if "Select" not in filtered.columns:
         filtered.insert(0, "Select", False)
     else:
-        # Ensure it's boolean-ish for editor
         filtered["Select"] = filtered["Select"].astype(bool)
 
     st.write("Tick exactly **ONE** recipient in the table:")
@@ -316,21 +346,35 @@ elif st.session_state.step == 2:
             if len(selected_rows) != 1:
                 st.error("Please tick exactly ONE recipient in the table.")
             else:
-                row = selected_rows.iloc[0].to_dict()
+                selected = selected_rows.iloc[0]
+                sel_email = str(selected.get("email", "")).strip()
+                sel_display = str(selected.get("display", "")).strip()
+
+                # Look up FULL row from filtered dataframe (contains title/first/last)
+                if sel_email:
+                    match = filtered[filtered["email"].astype(str).str.strip() == sel_email]
+                else:
+                    match = filtered[filtered["display"].astype(str).str.strip() == sel_display]
+
+                if match.empty:
+                    st.error("Could not find full recipient record. Please try again.")
+                    st.stop()
+
+                row_full = match.iloc[0].to_dict()
 
                 subject, body = generate_one_of_ten(
                     tone=tone,
                     sender_name=st.session_state.sender_name,
-                    row=row,
+                    row=row_full,
                 )
 
                 st.session_state.draft = {
-                    "to": str(row.get("email", "")).strip(),
+                    "to": str(row_full.get("email", "")).strip(),
                     "subject": subject,
                     "body": body,
-                    "recipient": str(row.get("display", "")).strip(),
+                    "recipient": str(row_full.get("display", "")).strip(),
                     "tone": tone,
-                    "row": row,  # keep for reroll
+                    "row": row_full,  # keep for reroll
                 }
                 st.session_state.step = 3
                 st.rerun()
@@ -339,6 +383,7 @@ elif st.session_state.step == 2:
         if st.button("Back"):
             st.session_state.step = 1
             st.rerun()
+
 
 # ---------------------------
 # Step 3: draft + send
