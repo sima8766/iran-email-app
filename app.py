@@ -120,7 +120,7 @@ def pick_new_index(exclude_index: int | None, n: int) -> int:
 
 
 def build_email(sender_name: str, choice_index: int) -> tuple[str, str]:
-    greeting = "Dear Member of Parliament,"
+    greeting = "Dear Member of Parliament/ Senator,"
     intro = INTRO_BANK[choice_index % len(INTRO_BANK)]
     closing = CLOSING_BANK[choice_index % len(CLOSING_BANK)]
     subject = SUBJECT_OPTIONS[choice_index % len(SUBJECT_OPTIONS)]
