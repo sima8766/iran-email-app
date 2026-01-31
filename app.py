@@ -169,7 +169,7 @@ if "last_pick" not in st.session_state:
 if "mailto_url" not in st.session_state:
     st.session_state.mailto_url = None
 
-name = st.text_input("Your name (English)", placeholder="Sam Niknejad")
+name = st.text_input("Your name (English)")
 
 # One button to generate a NEW unique mailto link
 if st.button("Step 1: Generate email link", use_container_width=True):
