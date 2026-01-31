@@ -1,8 +1,10 @@
-# app_V4Draft3.py
+# app_V4Draft4.py
 # Bulk Email Draft Generator (AU MPs & Senators)
-# User enters name, then clicks one button to open a prefilled email
-# All recipients are in BCC, no recipient selection, no email preview
-# Each click generates a new random draft, different from the previous one
+# - User enters name
+# - No recipient selection, all recipients go in BCC
+# - No email preview
+# - Mobile friendly: uses a real link button (no JS redirect)
+# - Each time user generates, it picks a new random draft different from the previous one
 
 import random
 import urllib.parse
@@ -10,7 +12,6 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 # ---------------------------
@@ -25,14 +26,12 @@ st.set_page_config(
 )
 
 st.title("Email Draft Generator")
-st.caption("Enter your name, then open a prefilled email with all recipients included in BCC.")
-
-# Blue line message as requested
+st.caption("Enter your name and open a prefilled email with all recipients included in BCC.")
 st.info("This tool can be used by anyone, anywhere in the world, no matter where you live.")
 
 
 # ---------------------------
-# Locked: Six items
+# Content
 # ---------------------------
 SIX_ITEMS = [
     "1. Protect the people of Iran by weakening the regime’s machinery of repression, especially by targeting the Islamic Revolutionary Guard Corps (IRGC), its commanders, its command structure, and its infrastructure.",
@@ -67,9 +66,8 @@ CLOSING_BANK = [
 
 def find_email_column(df: pd.DataFrame) -> str | None:
     candidates = ["email", "Email", "EMAIL", "e-mail", "E-mail", "mail", "Mail"]
-    cols = set(df.columns)
     for c in candidates:
-        if c in cols:
+        if c in df.columns:
             return c
     for c in df.columns:
         if "email" in str(c).lower():
@@ -112,6 +110,15 @@ def load_recipients(csv_path: Path) -> list[str]:
     return cleaned
 
 
+def pick_new_index(exclude_index: int | None, n: int) -> int:
+    if n <= 1:
+        return 0
+    choices = list(range(n))
+    if exclude_index is not None and exclude_index in choices:
+        choices.remove(exclude_index)
+    return random.choice(choices)
+
+
 def build_email(sender_name: str, choice_index: int) -> tuple[str, str]:
     greeting = "Dear Member of Parliament,"
     intro = INTRO_BANK[choice_index % len(INTRO_BANK)]
@@ -129,25 +136,21 @@ def build_email(sender_name: str, choice_index: int) -> tuple[str, str]:
         f"Sincerely,\n"
         f"{sender_name}"
     )
-
     return subject, body
 
 
 def build_mailto_bcc_link(bcc_emails: list[str], subject: str, body: str) -> str:
     bcc_value = ",".join(bcc_emails)
-    params = {"bcc": bcc_value, "subject": subject, "body": body}
 
+    params = {
+        "bcc": bcc_value,
+        "subject": subject,
+        "body": body,
+    }
+
+    # Keep this encoding stable for mailto
     query = "&".join(f"{k}={urllib.parse.quote(v, safe='')}" for k, v in params.items())
     return f"mailto:?{query}"
-
-
-def pick_new_index(exclude_index: int | None, n: int) -> int:
-    if n <= 1:
-        return 0
-    choices = list(range(n))
-    if exclude_index is not None and exclude_index in choices:
-        choices.remove(exclude_index)
-    return random.choice(choices)
 
 
 # ---------------------------
@@ -159,17 +162,17 @@ except Exception as e:
     st.error(str(e))
     st.stop()
 
-# Keep state of last pick so next click is different
+# State for "different from last time"
 if "last_pick" not in st.session_state:
     st.session_state.last_pick = None
 
+if "mailto_url" not in st.session_state:
+    st.session_state.mailto_url = None
+
 name = st.text_input("Your name (English)", placeholder="Sam Niknejad")
 
-
-# ---------------------------
-# Single action button: generates a new draft and opens mail app
-# ---------------------------
-if st.button("Open email in your email app", use_container_width=True):
+# One button to generate a NEW unique mailto link
+if st.button("Generate email link", use_container_width=True):
     if not name.strip():
         st.warning("Please enter your name first.")
     else:
@@ -178,14 +181,8 @@ if st.button("Open email in your email app", use_container_width=True):
         st.session_state.last_pick = new_pick
 
         subject, body = build_email(name.strip(), new_pick)
-        mailto_url = build_mailto_bcc_link(recipients, subject, body)
+        st.session_state.mailto_url = build_mailto_bcc_link(recipients, subject, body)
 
-        # Open the user's default mail client immediately after click
-        components.html(
-            f"""
-            <script>
-              window.location.href = "{mailto_url}";
-            </script>
-            """,
-            height=0,
-        )
+# Show only the link button (no preview)
+if st.session_state.mailto_url:
+    st.link_button("Open email in your email app", st.session_state.mailto_url, use_container_width=True)
