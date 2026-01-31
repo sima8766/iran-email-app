@@ -172,7 +172,7 @@ if "mailto_url" not in st.session_state:
 name = st.text_input("Your name (English)", placeholder="Sam Niknejad")
 
 # One button to generate a NEW unique mailto link
-if st.button("Generate email link", use_container_width=True):
+if st.button("Step1: Generate email link", use_container_width=True):
     if not name.strip():
         st.warning("Please enter your name first.")
     else:
@@ -185,4 +185,4 @@ if st.button("Generate email link", use_container_width=True):
 
 # Show only the link button (no preview)
 if st.session_state.mailto_url:
-    st.link_button("Open email in your email app", st.session_state.mailto_url, use_container_width=True)
+    st.link_button("Step 2: Open email in your email app", st.session_state.mailto_url, use_container_width=True)
