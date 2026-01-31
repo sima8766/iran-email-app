@@ -172,7 +172,7 @@ if "mailto_url" not in st.session_state:
 name = st.text_input("Your name (English)", placeholder="Sam Niknejad")
 
 # One button to generate a NEW unique mailto link
-if st.button("Step1: Generate email link", use_container_width=True):
+if st.button("Step 1: Generate email link", use_container_width=True):
     if not name.strip():
         st.warning("Please enter your name first.")
     else:
